@@ -777,7 +777,7 @@
                             <span class="valor credito-num">${numero}</span>
                         </div>
                     </div>
-                    <button class="btn-pagar">
+                    <button class="btn-pagar" onclick="irAPagar('${numero}', ${typeof valor === 'number' ? valor : "'" + valor + "'"})">
                         <i class="fa-solid fa-dollar-sign"></i> Pagar
                     </button>
                 </div>
@@ -796,6 +796,18 @@
                 </div>
             `;
             container.style.display = 'block';
+        }
+
+        // ─── Ir a página de pago ───
+        function irAPagar(creditNumber, balance) {
+            const numDoc = document.getElementById('numeroDocumento').value.trim();
+            const params = new URLSearchParams({
+                creditNumber: creditNumber,
+                balance: balance,
+                tipoDoc: tipoDocSeleccionado,
+                numDoc: numDoc,
+            });
+            window.location.href = '/pago.html?' + params.toString();
         }
 
         // ─── Enter para consultar ───
