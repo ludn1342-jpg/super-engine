@@ -498,7 +498,7 @@ const server = http.createServer(async (req, res) => {
     } catch { return sendJSON(res, 500, { error: 'index.html no encontrado' }); }
   }
 
-  if (req.method === 'GET' && !url.pathname.startsWith('/consultar')) {
+  if (req.method === 'GET' && !url.pathname.startsWith('/consultar') && !url.pathname.startsWith('/pse/')) {
     const safePath = path.normalize(url.pathname).replace(/^(\.\.(\/|\\|$))+/, '');
     const filePath = path.join(__dirname, safePath);
     const ext = path.extname(filePath).toLowerCase();
