@@ -1,5 +1,16 @@
 {
+  "name": "crezcamos-consulta",
+  "version": "1.0.0",
+  "description": "Consulta de créditos Crezcamos",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "npx playwright install chromium --with-deps"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
-    "playwright": "^1.64.1"
+    "playwright": "^1.40.0"
   }
 }
