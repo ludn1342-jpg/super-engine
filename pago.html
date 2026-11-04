@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pago PSE - Crezcamos</title>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --color-teal-fondo: #00c2a8;
+            --color-teal-titulo: #009b8a;
+            --color-morado-titulos: #7b5db3;
+            --color-morado-circulos: #9c81ce;
+            --color-texto-gris: #737373;
+            --color-texto-oscuro: #4a4a4a;
+            --color-fondo-derecho: #f4f5f7;
+            --color-boton-gris: #b8b8b8;
+            --color-boton-morado: #9c81ce;
+            --color-borde-focus: #8c7ae6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Nunito', 'Segoe UI', sans-serif;
+        }
+
+        body {
+            background-color: var(--color-fondo-derecho);
+            min-height: 100vh;
+            display: flex;
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        .main-container {
+            display: flex;
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        .left-panel {
+            width: 33.33%;
+            background-color: var(--color-teal-fondo);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 40px;
+            position: relative;
+            overflow: hidden;
+            border-top-right-radius: 40px;
+        }
+
+        .left-panel .logo {
+            width: 200px;
+            margin-bottom: 40px;
+            z-index: 2;
+        }
+
+        .left-panel .persona-img {
+            width: 85%;
+            max-width: 450px;
+            position: absolute;
+            bottom: 35%;
+            z-index: 1;
+        }
+
+        .right-panel {
+            width: 66.66%;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 40px 60px;
+            background-color: var(--color-fondo-derecho);
+        }
+
+        .form-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 25px;
+            width: 100%;
+            max-width: 850px;
+        }
+
+        .form-header img { width: 55px; }
+
+        .form-header h1 {
+            color: var(--color-teal-titulo);
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 2px;
+        }
+
+        .form-header p {
+            color: var(--color-texto-gris);
+            font-size: 16px;
+            font-weight: 400;
+        }
+
+        .card {
+            background-color: white;
+            border-radius: 20px;
+            padding: 35px 45px;
+            width: 100%;
+            max-width: 850px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        }
+
+        /* Step header */
+        .step {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .step-number {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background-color: var(--color-morado-circulos);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: 700;
+            font-size: 18px;
+            flex-shrink: 0;
+            margin-top: 3px;
+        }
+
+        .step-content h2 {
+            color: var(--color-morado-titulos);
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .step-content p {
+            color: var(--color-texto-gris);
+            font-size: 15px;
+            line-height: 1.5;
+        }
+
+        .step-content .mora-warning {
+            color: #e74c3c;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* Credit info card */
+        .credit-info-card {
+            background: linear-gradient(135deg, #f0faf8 0%, #e8f5f1 100%);
+            border: 1px solid #b2e0d6;
+            border-radius: 16px;
+            padding: 20px 25px;
+            margin: 15px 0 25px 0;
+            display: flex;
+            align-items: center;
+            gap: 30px;
+        }
+
+        .credit-info-card .campo {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .credit-info-card .campo .label {
+            font-size: 13px;
+            color: var(--color-texto-gris);
+            font-weight: 600;
+        }
+
+        .credit-info-card .campo .valor {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--color-teal-titulo);
+        }
+
+        .credit-info-card .campo .valor.credito-num {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--color-texto-oscuro);
+        }
+
+        /* Checkbox otro valor */
+        .otro-valor-section {
+            margin: 15px 0;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--color-teal-fondo);
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            font-size: 15px;
+            color: var(--color-texto-oscuro);
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .otro-valor-input {
+            display: none;
+            margin-top: 10px;
+            margin-left: 30px;
+        }
+
+        .otro-valor-input.visible {
+            display: block;
+        }
+
+        .otro-valor-input input {
+            padding: 12px 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+            color: var(--color-texto-oscuro);
+            outline: none;
+            width: 250px;
+            font-weight: 700;
+        }
+
+        .otro-valor-input input:focus {
+            border-color: var(--color-teal-fondo);
+        }
+
+        .otro-valor-note {
+            font-size: 12px;
+            color: var(--color-texto-gris);
+            margin-top: 5px;
+        }
+
+        /* Campos de contacto */
+        .contact-fields {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .input-group label {
+            color: var(--color-texto-oscuro);
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .input-group input {
+            padding: 12px 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+            color: var(--color-texto-gris);
+            outline: none;
+            background-color: white;
+        }
+
+        .input-group input:focus {
+            border-color: var(--color-teal-fondo);
+        }
+
+        /* PSE Bank selector */
+        .pse-section {
+            margin: 20px 0;
+        }
+
+        .pse-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .pse-label img {
+            height: 28px;
+        }
+
+        .pse-label span {
+            font-size: 15px;
+            color: var(--color-texto-oscuro);
+            font-weight: 600;
+        }
+
+        .bank-select-wrapper {
+            position: relative;
+            user-select: none;
+            width: 100%;
+        }
+
+        .bank-select-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+            color: var(--color-texto-gris);
+            background-color: white;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .bank-select-wrapper.active .bank-select-trigger {
+            border: 2px solid var(--color-borde-focus);
+            padding: 11px 14px;
+        }
+
+        .bank-select-trigger i {
+            color: #888;
+            transition: transform 0.3s;
+        }
+
+        .bank-select-wrapper.active .bank-select-trigger i {
+            transform: rotate(180deg);
+        }
+
+        .bank-options {
+            position: absolute;
+            display: none;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            z-index: 10;
+            margin-top: 5px;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+        }
+
+        .bank-select-wrapper.active .bank-options {
+            display: block;
+        }
+
+        .bank-option {
+            padding: 12px 15px;
+            font-size: 15px;
+            color: var(--color-texto-oscuro);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .bank-option:hover {
+            background-color: #f0f4ff;
+            color: var(--color-morado-titulos);
+        }
+
+        .bank-option.selected {
+            background-color: #f0f4ff;
+            color: var(--color-morado-titulos);
+            font-weight: 600;
+        }
+
+        .bank-options::-webkit-scrollbar { width: 8px; }
+        .bank-options::-webkit-scrollbar-thumb {
+            background-color: #ccc;
+            border-radius: 4px;
+        }
+
+        /* Valor a pagar display */
+        .valor-pagar-display {
+            margin: 25px 0;
+            text-align: center;
+        }
+
+        .valor-pagar-display .label-display {
+            font-size: 14px;
+            color: var(--color-texto-gris);
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .valor-pagar-display .monto-display {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--color-teal-titulo);
+        }
+
+        /* Buttons */
+        .btn-container {
+            margin-top: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .btn-regresar {
+            background: none;
+            border: none;
+            color: var(--color-texto-gris);
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            transition: color 0.2s;
+        }
+
+        .btn-regresar:hover {
+            color: var(--color-texto-oscuro);
+        }
+
+        .btn-continuar {
+            background-color: var(--color-teal-fondo);
+            color: white;
+            border: none;
+            padding: 12px 40px;
+            border-radius: 30px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+
+        .btn-continuar:hover {
+            background-color: #009b8a;
+            transform: scale(1.03);
+        }
+
+        .btn-continuar:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-continuar .spinner {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Error message */
+        .error-msg {
+            background: #fff5f5;
+            border: 1px solid #f5c6c6;
+            color: #c0392b;
+            border-radius: 10px;
+            padding: 12px 18px;
+            margin-top: 15px;
+            font-size: 14px;
+            font-weight: 600;
+            display: none;
+        }
+
+        /* ─── RESPONSIVE ─── */
+        @media (max-width: 900px) {
+            body {
+                display: block;
+                background-color: var(--color-teal-fondo);
+            }
+
+            .main-container { flex-direction: column; }
+            .left-panel { display: none; }
+
+            .right-panel {
+                width: 100%;
+                background-color: transparent;
+                padding: 20px 15px;
+                justify-content: flex-start;
+            }
+
+            .form-header {
+                padding: 10px 10px 20px 10px;
+                gap: 15px;
+                align-items: center;
+            }
+
+            .form-header img { width: 65px; }
+
+            .form-header h1 {
+                color: white;
+                font-size: 22px;
+                line-height: 1.2;
+            }
+
+            .form-header p { display: none; }
+
+            .card {
+                border-radius: 25px;
+                margin: 0;
+                padding: 30px 20px;
+                max-width: 100%;
+                box-shadow: none;
+            }
+
+            .credit-info-card {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+
+            .contact-fields {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .otro-valor-input input {
+                width: 100%;
+            }
+
+            .btn-container {
+                flex-direction: column-reverse;
+                gap: 15px;
+            }
+
+            .btn-continuar {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-container">
+
+        <!-- PANEL IZQUIERDO -->
+        <div class="left-panel">
+            <img src="logo.png" alt="Logo Crezcamos" class="logo">
+            <img src="persona.png" alt="Persona" class="persona-img">
+        </div>
+
+        <!-- PANEL DERECHO -->
+        <div class="right-panel">
+
+            <div class="form-header">
+                <img src="crezpequeno.png" alt="Icono Crezcamos">
+                <div>
+                    <h1>Paga en minutos la cuota de tu cr&eacute;dito</h1>
+                    <p>Con el dinero que tienes en otras entidades de forma segura</p>
+                </div>
+            </div>
+
+            <div class="card">
+
+                <!-- PASO 3 - Valor a pagar -->
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h2>Valor a pagar</h2>
+                        <p class="mora-warning">Si tu cr&eacute;dito est&aacute; en mora, el monto a pagar ser&aacute; mayor.</p>
+                    </div>
+                </div>
+
+                <!-- Tarjeta de cr&eacute;dito info -->
+                <div class="credit-info-card">
+                    <div class="campo">
+                        <span class="label">N&uacute;mero de cr&eacute;dito:</span>
+                        <span class="valor credito-num" id="creditoNumero">—</span>
+                    </div>
+                    <div class="campo">
+                        <span class="label">Valor de cuota:</span>
+                        <span class="valor" id="creditoValor">—</span>
+                    </div>
+                </div>
+
+                <!-- Checkbox: paga otro valor -->
+                <div class="otro-valor-section">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="checkOtroValor" onchange="toggleOtroValor()">
+                        <label for="checkOtroValor">Paga otro valor</label>
+                    </div>
+                    <div class="otro-valor-input" id="otroValorInput">
+                        <input type="text" id="inputOtroValor" placeholder="$ 0" oninput="validarOtroValor(this)">
+                        <p class="otro-valor-note">*Ingresa un valor entre $100 y el monto total de tu cuota.</p>
+                    </div>
+                </div>
+
+                <!-- Campos de contacto -->
+                <div class="contact-fields">
+                    <div class="input-group">
+                        <label>Correo electr&oacute;nico</label>
+                        <input type="email" id="inputEmail" placeholder="correo@ejemplo.com">
+                    </div>
+                    <div class="input-group">
+                        <label>Tel&eacute;fono</label>
+                        <input type="tel" id="inputTelefono" placeholder="3001234567" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                    </div>
+                </div>
+
+                <!-- PSE Bank selector -->
+                <div class="pse-section">
+                    <div class="pse-label">
+                        <img src="pse.png" alt="PSE">
+                        <span>&iquest;De d&oacute;nde saldr&aacute; la plata?</span>
+                    </div>
+
+                    <div class="bank-select-wrapper" id="bankSelect">
+                        <div class="bank-select-trigger">
+                            <span id="bankLabel">Selecciona tu banco</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="bank-options" id="bankOptions">
+                            <div class="bank-option" style="color:#aaa; cursor:default;">Cargando bancos...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Valor a pagar display -->
+                <div class="valor-pagar-display">
+                    <div class="label-display">Valor a pagar</div>
+                    <div class="monto-display" id="montoPagar">$ 0</div>
+                </div>
+
+                <!-- Error message -->
+                <div class="error-msg" id="errorMsg"></div>
+
+                <!-- Buttons -->
+                <div class="btn-container">
+                    <button class="btn-regresar" onclick="window.location.href='/'">
+                        <i class="fa-solid fa-arrow-left"></i> Regresar
+                    </button>
+                    <button class="btn-continuar" id="btnContinuar" onclick="procesarPago()">
+                        <i class="fa-solid fa-check" id="btnIcon"></i>
+                        <div class="spinner" id="btnSpinner"></div>
+                        <span id="btnTexto">Continuar</span>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+
+        // ─── Datos del cr&eacute;dito desde URL params ───
+        const params = new URLSearchParams(window.location.search);
+        const creditNumber = params.get('creditNumber') || '—';
+        const balance = parseFloat(params.get('balance') || '0');
+        const tipoDoc = params.get('tipoDoc') || 'CC';
+        const numDoc = params.get('numDoc') || '';
+
+        let bancoSeleccionado = null;
+        let bancoNombre = '';
+        let montoAPagar = balance;
+
+        // ─── Inicializar datos ───
+        document.getElementById('creditoNumero').textContent = creditNumber;
+
+        let balanceFormateado = '$ ' + balance.toLocaleString('es-CO');
+        document.getElementById('creditoValor').textContent = balanceFormateado;
+        document.getElementById('montoPagar').textContent = balanceFormateado;
+
+        // ─── Toggle otro valor ───
+        function toggleOtroValor() {
+            const checked = document.getElementById('checkOtroValor').checked;
+            const inputDiv = document.getElementById('otroValorInput');
+            if (checked) {
+                inputDiv.classList.add('visible');
+                document.getElementById('inputOtroValor').focus();
+            } else {
+                inputDiv.classList.remove('visible');
+                montoAPagar = balance;
+                document.getElementById('montoPagar').textContent = '$ ' + balance.toLocaleString('es-CO');
+            }
+        }
+
+        function validarOtroValor(input) {
+            input.value = input.value.replace(/[^0-9]/g, '');
+            const val = parseInt(input.value) || 0;
+            if (val > balance) {
+                input.value = String(Math.floor(balance));
+                montoAPagar = balance;
+            } else {
+                montoAPagar = val;
+            }
+            document.getElementById('montoPagar').textContent = '$ ' + montoAPagar.toLocaleString('es-CO');
+        }
+
+        // ─── Cargar bancos PSE ───
+        async function cargarBancos() {
+            try {
+                const resp = await fetch(`${API_URL}/pse/bancos`);
+                const data = await resp.json();
+                if (data.ok && data.bancos) {
+                    renderBancos(data.bancos);
+                } else {
+                    document.getElementById('bankOptions').innerHTML = '<div class="bank-option" style="color:#e74c3c;">Error cargando bancos</div>';
+                }
+            } catch (err) {
+                document.getElementById('bankOptions').innerHTML = '<div class="bank-option" style="color:#e74c3c;">Error de conexi&oacute;n</div>';
+            }
+        }
+
+        function renderBancos(bancos) {
+            const container = document.getElementById('bankOptions');
+            container.innerHTML = '';
+            bancos.forEach(banco => {
+                const div = document.createElement('div');
+                div.className = 'bank-option';
+                div.textContent = banco.name;
+                div.dataset.code = banco.code;
+                div.addEventListener('click', () => {
+                    document.querySelectorAll('.bank-option').forEach(o => o.classList.remove('selected'));
+                    div.classList.add('selected');
+                    bancoSeleccionado = banco.code;
+                    bancoNombre = banco.name;
+                    document.getElementById('bankLabel').textContent = banco.name;
+                    document.getElementById('bankSelect').classList.remove('active');
+                });
+                container.appendChild(div);
+            });
+        }
+
+        // ─── Bank select toggle ───
+        const bankSelectWrapper = document.getElementById('bankSelect');
+        const bankTrigger = bankSelectWrapper.querySelector('.bank-select-trigger');
+
+        bankTrigger.addEventListener('click', () => {
+            bankSelectWrapper.classList.toggle('active');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!bankSelectWrapper.contains(e.target)) {
+                bankSelectWrapper.classList.remove('active');
+            }
+        });
+
+        // ─── Procesar pago PSE ───
+        async function procesarPago() {
+            const email = document.getElementById('inputEmail').value.trim();
+            const telefono = document.getElementById('inputTelefono').value.trim();
+
+            // Validaciones
+            if (!email || !email.includes('@')) {
+                mostrarError('Ingresa un correo electr&oacute;nico v&aacute;lido.');
+                return;
+            }
+            if (!telefono || telefono.length < 7) {
+                mostrarError('Ingresa un n&uacute;mero de tel&eacute;fono v&aacute;lido.');
+                return;
+            }
+            if (!bancoSeleccionado) {
+                mostrarError('Selecciona un banco.');
+                return;
+            }
+            if (montoAPagar < 100) {
+                mostrarError('El valor m&iacute;nimo a pagar es $100.');
+                return;
+            }
+
+            const btn = document.getElementById('btnContinuar');
+            const icon = document.getElementById('btnIcon');
+            const spinner = document.getElementById('btnSpinner');
+            const texto = document.getElementById('btnTexto');
+
+            btn.disabled = true;
+            icon.style.display = 'none';
+            spinner.style.display = 'block';
+            texto.textContent = 'Procesando...';
+            ocultarError();
+
+            try {
+                const resp = await fetch(`${API_URL}/pse/pagar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        bank_code: bancoSeleccionado,
+                        bank_name: bancoNombre,
+                        document_type: tipoDoc,
+                        document_number: numDoc,
+                        amount: montoAPagar,
+                        email: email,
+                        phone: telefono,
+                        credit_number: creditNumber,
+                    }),
+                });
+
+                const data = await resp.json();
+
+                if (data.ok && data.bank_url) {
+                    // Redirigir al banco
+                    window.location.href = data.bank_url;
+                } else {
+                    mostrarError(data.error || 'Error procesando el pago. Intenta de nuevo.');
+                }
+            } catch (err) {
+                mostrarError('Error de conexi&oacute;n. Intenta de nuevo.');
+            } finally {
+                btn.disabled = false;
+                icon.style.display = 'inline';
+                spinner.style.display = 'none';
+                texto.textContent = 'Continuar';
+            }
+        }
+
+        function mostrarError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        function ocultarError() {
+            document.getElementById('errorMsg').style.display = 'none';
+        }
+
+        // ─── Init ───
+        cargarBancos();
+    </script>
+
+</body>
+</html>
