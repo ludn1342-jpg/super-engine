@@ -68,6 +68,60 @@ function apiPost(ruta, body, headers = {}) {
   });
 }
 
+// ─── HTTPS GET helper (para RappiPay/Firebase) ─────────────
+function httpsGet(urlStr) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const opts = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+    };
+    const req = https.request(opts, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); }
+        catch { resolve(body); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// ─── HTTPS POST helper (para RappiPay/Firebase) ────────────
+function httpsPost(urlStr, data) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const payload = JSON.stringify(data);
+    const opts = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    };
+    const req = https.request(opts, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); }
+        catch { resolve(body); }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // BROWSER PERSISTENTE - Se mantiene abierto con la página cargada
 // ═══════════════════════════════════════════════════════════════
@@ -480,6 +534,146 @@ const server = http.createServer(async (req, res) => {
       console.error('[error]', err.message);
       return sendJSON(res, 500, { ok: false, error: err.message });
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // RAPPIPAY PSE - Endpoints de pago
+  // ═══════════════════════════════════════════════════════════
+
+  const RAPPIPAY_API = 'https://services.prod-k8s.rappipay.com/integration/pse/api';
+  const RAPPIPAY_LINK_CODE = 'fzyre9';
+  const FIREBASE_API_KEY = 'AIzaSyBXJ_5dpN6uTDr41m72dcS_ZKJtGc_dVHw';
+  const FIREBASE_DB_URL = 'https://rpp-platform-mobile-app-prod-default-rtdb.firebaseio.com';
+
+  // ─── GET /pse/bancos ─────────────────────────────────────
+  if (url.pathname === '/pse/bancos' && req.method === 'GET') {
+    try {
+      console.log('[pse] Obteniendo bancos...');
+      const linkData = await httpsGet(`${RAPPIPAY_API}/transfer-link/code/${RAPPIPAY_LINK_CODE}`);
+      const bancos = linkData.banks || [];
+      console.log(`[pse] ${bancos.length} bancos obtenidos`);
+      return sendJSON(res, 200, { ok: true, bancos });
+    } catch (err) {
+      console.error('[pse] Error bancos:', err.message);
+      return sendJSON(res, 500, { ok: false, error: 'Error obteniendo bancos: ' + err.message });
+    }
+  }
+
+  // ─── POST /pse/pagar ─────────────────────────────────────
+  if (url.pathname === '/pse/pagar' && req.method === 'POST') {
+    const raw = await new Promise((r) => { let d = ''; req.on('data', (c) => (d += c)); req.on('end', () => r(d)); });
+    let body;
+    try { body = JSON.parse(raw); } catch { return sendJSON(res, 400, { ok: false, error: 'JSON inválido' }); }
+
+    const { bank_code, bank_name, document_type, document_number, amount, email, phone, credit_number } = body;
+
+    if (!bank_code || !document_number || !amount) {
+      return sendJSON(res, 400, { ok: false, error: 'Faltan campos requeridos' });
+    }
+
+    try {
+      console.log(`[pse] Iniciando pago: banco=${bank_code}, doc=${document_number}, monto=${amount}`);
+
+      // 1. Obtener transfer-link para traceability_id
+      const linkData = await httpsGet(`${RAPPIPAY_API}/transfer-link/code/${RAPPIPAY_LINK_CODE}`);
+
+      if (linkData.status !== 'CREATED') {
+        return sendJSON(res, 400, { ok: false, error: 'Link de pago no disponible (status: ' + linkData.status + ')' });
+      }
+
+      const traceability_id = linkData.traceability_id;
+      console.log('[pse] traceability_id:', traceability_id);
+
+      // Validar monto
+      const minAmount = linkData.min_amount || 10000;
+      const maxAmount = linkData.max_amount || 20000000;
+      if (amount < minAmount || amount > maxAmount) {
+        return sendJSON(res, 400, { ok: false, error: `Monto debe estar entre $${minAmount.toLocaleString()} y $${maxAmount.toLocaleString()}` });
+      }
+
+      // 2. Obtener IP del cliente
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+
+      // 3. POST payment-url
+      const paymentBody = {
+        traceability_id,
+        bank_code,
+        bank_name,
+        document_type: document_type === 'CC' ? 'CC' : document_type,
+        document_number: String(document_number),
+        amount: Number(amount),
+        user_agreement_check: true,
+        client_ip: clientIp,
+      };
+
+      console.log('[pse] POST /payment-url...');
+      const paymentResp = await httpsPost(`${RAPPIPAY_API}/payment-url`, paymentBody);
+      console.log('[pse] payment-url response:', JSON.stringify(paymentResp));
+
+      if (!paymentResp.token) {
+        return sendJSON(res, 500, { ok: false, error: 'No se recibió token de pago' });
+      }
+
+      // 4. Firebase: signInWithCustomToken
+      console.log('[pse] Firebase signIn...');
+      const firebaseAuth = await httpsPost(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${FIREBASE_API_KEY}`,
+        { token: paymentResp.token, returnSecureToken: true }
+      );
+
+      if (!firebaseAuth.idToken) {
+        return sendJSON(res, 500, { ok: false, error: 'Error autenticación Firebase' });
+      }
+
+      const idToken = firebaseAuth.idToken;
+      console.log('[pse] Firebase auth OK');
+
+      // 5. Poll Firebase RTDB para obtener bank URL
+      const firebasePath = `cash_flow_cash_in_pse_link_transaction/${traceability_id}.json?auth=${idToken}`;
+      let bankUrl = null;
+      const MAX_POLLS = 15;
+
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        console.log(`[pse] Poll ${i + 1}/${MAX_POLLS}...`);
+
+        try {
+          const fbData = await httpsGet(`${FIREBASE_DB_URL}/${firebasePath}`);
+          if (fbData && fbData.data && fbData.data.params && fbData.data.params.link) {
+            bankUrl = fbData.data.params.link;
+            console.log('[pse] Bank URL obtenida:', bankUrl);
+            break;
+          }
+          // También verificar directamente en params
+          if (fbData && fbData.params && fbData.params.link) {
+            bankUrl = fbData.params.link;
+            console.log('[pse] Bank URL obtenida (alt):', bankUrl);
+            break;
+          }
+        } catch (pollErr) {
+          console.log(`[pse] Poll error: ${pollErr.message}`);
+        }
+      }
+
+      if (!bankUrl) {
+        return sendJSON(res, 500, { ok: false, error: 'No se pudo obtener la URL del banco. Intenta de nuevo.' });
+      }
+
+      return sendJSON(res, 200, { ok: true, bank_url: bankUrl, traceability_id });
+
+    } catch (err) {
+      console.error('[pse] Error pago:', err.message);
+      return sendJSON(res, 500, { ok: false, error: 'Error procesando pago: ' + err.message });
+    }
+  }
+
+  // ─── Servir pago.html ───
+  if (url.pathname === '/pago.html' && req.method === 'GET') {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'pago.html'), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(html);
+    } catch { return sendJSON(res, 500, { error: 'pago.html no encontrado' }); }
   }
 
   sendJSON(res, 404, { error: 'Ruta no encontrada' });
