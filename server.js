@@ -121,120 +121,125 @@ function httpsPost(urlStr, data) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CAPSOLVER + TOKEN CACHE
-// Siempre mantiene un token listo para uso inmediato
+// CAPSOLVER + POOL DE TOKENS
+// Mantiene 3 tokens listos. Si uno falla, usa el siguiente al instante.
 // ═══════════════════════════════════════════════════════════════
 
-const TOKEN_MAX_AGE = 100000; // Token válido por 100 seg (reCAPTCHA v3 dura 120s)
-let tokenCache = null;        // { token, timestamp }
-let tokenPromise = null;      // Promise en curso si se está resolviendo
+const TOKEN_MAX_AGE = 110000; // 110 seg (reCAPTCHA v3 dura 120s)
+const POOL_SIZE = 3;
+let tokenPool = [];           // [{ token, timestamp }, ...]
+let resolviendoCount = 0;     // Cuántos tokens se están resolviendo ahora
 
-// Resolver un token nuevo desde CapSolver
+// Resolver un token desde CapSolver
 async function resolverTokenCapSolver() {
   if (!CAPSOLVER_API_KEY) {
     throw new Error('CAPSOLVER_API_KEY no configurado.');
   }
 
   const t0 = Date.now();
-  console.log('[captcha] Solicitando token a CapSolver...');
 
-  const createResp = await httpsPost('https://api.capsolver.com/createTask', {
-    clientKey: CAPSOLVER_API_KEY,
-    task: {
-      type: 'ReCaptchaV3M1TaskProxyLess',
-      websiteURL: CREZCAMOS_URL,
-      websiteKey: RECAPTCHA_SITEKEY,
-      pageAction: 'sesion',
-      minScore: 0.9,
-    },
-  });
+  // Intentar con Enterprise primero, luego M1
+  const taskTypes = ['ReCaptchaV3EnterpriseTaskProxyLess', 'ReCaptchaV3M1TaskProxyLess'];
+  let lastErr;
 
-  if (createResp.errorId && createResp.errorId !== 0) {
-    throw new Error(`CapSolver error: ${createResp.errorDescription || createResp.errorCode}`);
-  }
+  for (const taskType of taskTypes) {
+    try {
+      const createResp = await httpsPost('https://api.capsolver.com/createTask', {
+        clientKey: CAPSOLVER_API_KEY,
+        task: {
+          type: taskType,
+          websiteURL: CREZCAMOS_URL,
+          websiteKey: RECAPTCHA_SITEKEY,
+          pageAction: 'sesion',
+          minScore: 0.9,
+        },
+      });
 
-  // Si CapSolver devuelve el token directo (sin polling)
-  if (createResp.solution?.gRecaptchaResponse) {
-    const token = createResp.solution.gRecaptchaResponse;
-    console.log(`[captcha] Token directo ✓ (${Date.now() - t0}ms, largo: ${token.length})`);
-    return token;
-  }
-
-  const taskId = createResp.taskId;
-  if (!taskId) throw new Error('CapSolver no devolvió taskId');
-
-  // Poll rápido: empieza a 1s, luego cada 1.5s
-  const delays = [1000, 1500, 1500, 1500, 2000, 2000, 2000, 2000, 3000, 3000];
-  for (let i = 0; i < delays.length; i++) {
-    await new Promise(r => setTimeout(r, delays[i]));
-
-    const result = await httpsPost('https://api.capsolver.com/getTaskResult', {
-      clientKey: CAPSOLVER_API_KEY,
-      taskId,
-    });
-
-    if (result.status === 'ready') {
-      const token = result.solution?.gRecaptchaResponse;
-      if (token) {
-        console.log(`[captcha] Token obtenido ✓ (${Date.now() - t0}ms, largo: ${token.length})`);
-        return token;
+      if (createResp.errorId && createResp.errorId !== 0) {
+        lastErr = new Error(`CapSolver ${taskType}: ${createResp.errorDescription || createResp.errorCode}`);
+        console.log(`[captcha] ${taskType} falló, intentando siguiente...`);
+        continue;
       }
-      throw new Error('CapSolver ready sin token');
-    }
 
-    if (result.errorId && result.errorId !== 0) {
-      throw new Error(`CapSolver error: ${result.errorDescription || result.errorCode}`);
+      // Token directo
+      if (createResp.solution?.gRecaptchaResponse) {
+        console.log(`[captcha] Token directo (${taskType}) ✓ ${Date.now() - t0}ms`);
+        return createResp.solution.gRecaptchaResponse;
+      }
+
+      const taskId = createResp.taskId;
+      if (!taskId) { lastErr = new Error('Sin taskId'); continue; }
+
+      // Poll rápido
+      for (let i = 0; i < 12; i++) {
+        await new Promise(r => setTimeout(r, i < 3 ? 1000 : 1500));
+        const result = await httpsPost('https://api.capsolver.com/getTaskResult', {
+          clientKey: CAPSOLVER_API_KEY,
+          taskId,
+        });
+
+        if (result.status === 'ready' && result.solution?.gRecaptchaResponse) {
+          console.log(`[captcha] Token (${taskType}) ✓ ${Date.now() - t0}ms`);
+          return result.solution.gRecaptchaResponse;
+        }
+        if (result.errorId && result.errorId !== 0) {
+          lastErr = new Error(result.errorDescription || result.errorCode);
+          break;
+        }
+      }
+    } catch (e) {
+      lastErr = e;
     }
   }
 
-  throw new Error('CapSolver timeout');
+  throw lastErr || new Error('CapSolver: no se pudo obtener token');
 }
 
-// Pre-cachear un token en background
-function preCachearToken() {
-  if (tokenPromise) return; // Ya hay uno en curso
+// Llenar el pool en background
+function llenarPool() {
+  // Limpiar tokens expirados
+  tokenPool = tokenPool.filter(t => (Date.now() - t.timestamp) < TOKEN_MAX_AGE);
 
-  tokenPromise = resolverTokenCapSolver()
-    .then(token => {
-      tokenCache = { token, timestamp: Date.now() };
-      tokenPromise = null;
-      console.log('[cache] Token pre-cacheado ✓');
-    })
-    .catch(err => {
-      tokenPromise = null;
-      console.log('[cache] Error pre-cacheando:', err.message);
-      // Reintentar en 5 segundos
-      setTimeout(preCachearToken, 5000);
-    });
-}
-
-// Obtener token: usa cache si hay, si no espera uno nuevo
-async function obtenerToken() {
-  // Si hay token cacheado y no está expirado, usarlo
-  if (tokenCache && (Date.now() - tokenCache.timestamp) < TOKEN_MAX_AGE) {
-    const token = tokenCache.token;
-    tokenCache = null; // Consumido
-    console.log('[cache] Usando token pre-cacheado ✓ (rápido)');
-    // Inmediatamente pedir otro en background
-    preCachearToken();
-    return token;
+  const faltantes = POOL_SIZE - tokenPool.length - resolviendoCount;
+  for (let i = 0; i < faltantes; i++) {
+    resolviendoCount++;
+    resolverTokenCapSolver()
+      .then(token => {
+        tokenPool.push({ token, timestamp: Date.now() });
+        resolviendoCount--;
+        console.log(`[pool] Token agregado ✓ (pool: ${tokenPool.length}/${POOL_SIZE})`);
+      })
+      .catch(err => {
+        resolviendoCount--;
+        console.log(`[pool] Error: ${err.message} (pool: ${tokenPool.length})`);
+        // Reintentar en 3s
+        setTimeout(llenarPool, 3000);
+      });
   }
-
-  // No hay cache, resolver uno ahora
-  tokenCache = null;
-  const token = await resolverTokenCapSolver();
-  // Pedir otro en background para la próxima
-  preCachearToken();
-  return token;
 }
 
-// Refrescar token periódicamente (cada 90s si no se ha usado)
+// Sacar un token del pool (instantáneo si hay)
+function tomarTokenDelPool() {
+  // Limpiar expirados
+  tokenPool = tokenPool.filter(t => (Date.now() - t.timestamp) < TOKEN_MAX_AGE);
+
+  if (tokenPool.length > 0) {
+    const entry = tokenPool.shift();
+    console.log(`[pool] Token consumido ✓ (quedan: ${tokenPool.length})`);
+    // Reponer en background
+    llenarPool();
+    return entry.token;
+  }
+  return null;
+}
+
+// Refrescar pool periódicamente
 setInterval(() => {
-  if (!tokenCache || (Date.now() - tokenCache.timestamp) > TOKEN_MAX_AGE) {
-    console.log('[cache] Token expirado o no existe, pre-cacheando...');
-    preCachearToken();
+  tokenPool = tokenPool.filter(t => (Date.now() - t.timestamp) < TOKEN_MAX_AGE);
+  if (tokenPool.length < POOL_SIZE) {
+    llenarPool();
   }
-}, 90000);
+}, 60000);
 
 // ─── AES-256-GCM cifrar/descifrar ───────────────────────────
 function cifrarAES(aesKey, datos) {
@@ -257,16 +262,25 @@ function descifrarAES(aesKey, payloadBase64) {
   return JSON.parse(decrypted.toString('utf8'));
 }
 
-// ─── Crear sesión (con reintentos) ──────────────────────────
-const MAX_REINTENTOS = 3;
+// ─── Crear sesión (con pool de tokens — reintentos instantáneos) ──
+const MAX_REINTENTOS = 5;
 
 async function crearSesion() {
   let lastError;
+
   for (let intento = 1; intento <= MAX_REINTENTOS; intento++) {
     try {
-      const captchaToken = await obtenerToken();
+      // 1. Intentar tomar del pool (instantáneo)
+      let captchaToken = tomarTokenDelPool();
 
-      console.log(`[sesion] Intento ${intento}/${MAX_REINTENTOS} — Iniciando sesión...`);
+      // 2. Si no hay en el pool, resolver uno ahora
+      if (!captchaToken) {
+        console.log(`[sesion] Pool vacío, resolviendo token...`);
+        captchaToken = await resolverTokenCapSolver();
+        llenarPool(); // Empezar a rellenar
+      }
+
+      console.log(`[sesion] Intento ${intento}/${MAX_REINTENTOS}...`);
       const initRes = await apiPost('/sesion/iniciar', { captchaToken });
 
       if (initRes.status !== 200 || !initRes.data?.sessionId) {
@@ -302,10 +316,17 @@ async function crearSesion() {
 
     } catch (err) {
       lastError = err;
-      const esLowScore = err.message.includes('CAPTCHA_LOW_SCORE') || err.message.includes('CAPTCHA_INVALIDO');
-      if (esLowScore && intento < MAX_REINTENTOS) {
-        console.log(`[sesion] ⚠ Captcha rechazado intento ${intento}/${MAX_REINTENTOS}, reintentando...`);
-        await new Promise(r => setTimeout(r, 500));
+      const esCaptchaError = err.message.includes('CAPTCHA_LOW_SCORE') || err.message.includes('CAPTCHA_INVALIDO');
+
+      if (esCaptchaError && intento < MAX_REINTENTOS) {
+        // Si hay tokens en el pool, reintentar AL INSTANTE (0ms delay)
+        const hayEnPool = tokenPool.some(t => (Date.now() - t.timestamp) < TOKEN_MAX_AGE);
+        if (hayEnPool) {
+          console.log(`[sesion] ⚠ LOW_SCORE → reintentando con otro token del pool (instantáneo)`);
+          continue; // Sin delay — toma otro del pool
+        }
+        // Si no hay en pool, esperar uno nuevo
+        console.log(`[sesion] ⚠ LOW_SCORE → pool vacío, resolviendo nuevo token...`);
         continue;
       }
       throw err;
@@ -573,8 +594,8 @@ server.listen(PORT, () => {
   if (!CAPSOLVER_API_KEY) {
     console.log('⚠️  CAPSOLVER_API_KEY no configurado!');
   } else {
-    // Pre-cachear primer token al arrancar
-    console.log('[cache] Pre-cacheando primer token...');
-    preCachearToken();
+    // Pre-cachear pool de tokens al arrancar
+    console.log(`[pool] Pre-cacheando ${POOL_SIZE} tokens...`);
+    llenarPool();
   }
 });
