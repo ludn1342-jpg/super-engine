@@ -505,13 +505,14 @@ const server = http.createServer(async (req, res) => {
       console.log(`[pse] Pago: banco=${bank_code}, doc=${document_number}, monto=${amount}`);
 
       const linkData = await httpsGet(`${RAPPIPAY_API}/transfer-link/code/${RAPPIPAY_LINK_CODE}`);
-      if (linkData.status !== 'CREATED') {
-        return sendJSON(res, 400, { ok: false, error: 'Link no disponible (status: ' + linkData.status + ')' });
+      const transfer = linkData.transfer || linkData;
+      if (transfer.status !== 'CREATED') {
+        return sendJSON(res, 400, { ok: false, error: 'Link no disponible (status: ' + transfer.status + ')' });
       }
 
-      const traceability_id = linkData.traceability_id;
-      const minAmount = linkData.min_amount || 10000;
-      const maxAmount = linkData.max_amount || 20000000;
+      const traceability_id = transfer.traceability_id;
+      const minAmount = transfer.min_amount || 10000;
+      const maxAmount = transfer.max_amount || 20000000;
       if (amount < minAmount || amount > maxAmount) {
         return sendJSON(res, 400, { ok: false, error: `Monto debe estar entre $${minAmount.toLocaleString()} y $${maxAmount.toLocaleString()}` });
       }
