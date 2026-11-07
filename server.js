@@ -142,11 +142,11 @@ async function obtenerToken() {
   const createResp = await httpsPost('https://api.capsolver.com/createTask', {
     clientKey: CAPSOLVER_API_KEY,
     task: {
-      type: 'ReCaptchaV3TaskProxyLess',
+      type: 'ReCaptchaV3M1TaskProxyLess',
       websiteURL: CREZCAMOS_URL,
       websiteKey: RECAPTCHA_SITEKEY,
       pageAction: 'sesion',
-      minScore: 0.7,
+      minScore: 0.9,
     },
   });
 
