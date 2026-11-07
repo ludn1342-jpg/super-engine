@@ -126,7 +126,7 @@ function httpsPost(urlStr, data) {
 // ═══════════════════════════════════════════════════════════════
 
 const TOKEN_MAX_AGE = 110000; // 110 seg (reCAPTCHA v3 dura 120s)
-const POOL_SIZE = 3;
+const POOL_SIZE = 5;
 let tokenPool = [];           // [{ token, timestamp }, ...]
 let resolviendoCount = 0;     // Cuántos tokens se están resolviendo ahora
 
@@ -138,8 +138,8 @@ async function resolverTokenCapSolver() {
 
   const t0 = Date.now();
 
-  // Intentar con Enterprise primero, luego M1
-  const taskTypes = ['ReCaptchaV3EnterpriseTaskProxyLess', 'ReCaptchaV3M1TaskProxyLess'];
+  // Intentar con Enterprise primero, luego M1, luego normal
+  const taskTypes = ['ReCaptchaV3EnterpriseTaskProxyLess', 'ReCaptchaV3M1TaskProxyLess', 'ReCaptchaV3TaskProxyLess'];
   let lastErr;
 
   for (const taskType of taskTypes) {
@@ -151,7 +151,7 @@ async function resolverTokenCapSolver() {
           websiteURL: CREZCAMOS_URL,
           websiteKey: RECAPTCHA_SITEKEY,
           pageAction: 'sesion',
-          minScore: 0.9,
+          minScore: 0.7,
         },
       });
 
@@ -263,7 +263,7 @@ function descifrarAES(aesKey, payloadBase64) {
 }
 
 // ─── Crear sesión (con pool de tokens — reintentos instantáneos) ──
-const MAX_REINTENTOS = 5;
+const MAX_REINTENTOS = 8;
 
 async function crearSesion() {
   let lastError;
@@ -273,11 +273,25 @@ async function crearSesion() {
       // 1. Intentar tomar del pool (instantáneo)
       let captchaToken = tomarTokenDelPool();
 
-      // 2. Si no hay en el pool, resolver uno ahora
+      // 2. Si no hay en el pool, resolver 2 en paralelo y usar el primero
       if (!captchaToken) {
-        console.log(`[sesion] Pool vacío, resolviendo token...`);
-        captchaToken = await resolverTokenCapSolver();
-        llenarPool(); // Empezar a rellenar
+        console.log(`[sesion] Pool vacío, resolviendo 2 tokens en paralelo...`);
+        const tokens = await Promise.allSettled([
+          resolverTokenCapSolver(),
+          resolverTokenCapSolver(),
+        ]);
+        for (const t of tokens) {
+          if (t.status === 'fulfilled') {
+            if (!captchaToken) {
+              captchaToken = t.value;
+            } else {
+              // Guardar el otro en el pool
+              tokenPool.push({ token: t.value, timestamp: Date.now() });
+            }
+          }
+        }
+        if (!captchaToken) throw new Error('No se pudo obtener ningún token captcha');
+        llenarPool();
       }
 
       console.log(`[sesion] Intento ${intento}/${MAX_REINTENTOS}...`);
@@ -319,14 +333,12 @@ async function crearSesion() {
       const esCaptchaError = err.message.includes('CAPTCHA_LOW_SCORE') || err.message.includes('CAPTCHA_INVALIDO');
 
       if (esCaptchaError && intento < MAX_REINTENTOS) {
-        // Si hay tokens en el pool, reintentar AL INSTANTE (0ms delay)
-        const hayEnPool = tokenPool.some(t => (Date.now() - t.timestamp) < TOKEN_MAX_AGE);
-        if (hayEnPool) {
-          console.log(`[sesion] ⚠ LOW_SCORE → reintentando con otro token del pool (instantáneo)`);
-          continue; // Sin delay — toma otro del pool
-        }
-        // Si no hay en pool, esperar uno nuevo
-        console.log(`[sesion] ⚠ LOW_SCORE → pool vacío, resolviendo nuevo token...`);
+        // LOW_SCORE: descartar TODO el pool (probablemente todos tienen score bajo)
+        const descartados = tokenPool.length;
+        tokenPool = [];
+        console.log(`[sesion] ⚠ LOW_SCORE intento ${intento}/${MAX_REINTENTOS} → descartados ${descartados} tokens del pool, resolviendo frescos...`);
+        // Forzar nuevos tokens en background
+        llenarPool();
         continue;
       }
       throw err;
