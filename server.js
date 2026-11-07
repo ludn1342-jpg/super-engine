@@ -531,24 +531,39 @@ const server = http.createServer(async (req, res) => {
 
       const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
 
-      const paymentResp = await httpsPost(`${RAPPIPAY_API}/payment-url`, {
+      const paymentPayload = {
         traceability_id,
         bank_code,
-        bank_name,
-        document_type: document_type === 'CC' ? 'CC' : document_type,
+        bank_name: bank_name || '',
+        document_type: document_type || 'CC',
         document_number: String(document_number),
         amount: Number(amount),
         user_agreement_check: true,
         client_ip: clientIp,
-      });
+      };
+      console.log('[pse] POST /payment-url payload:', JSON.stringify(paymentPayload));
 
-      if (!paymentResp.token) {
-        return sendJSON(res, 500, { ok: false, error: 'No se recibió token de pago' });
+      const paymentResp = await httpsPost(`${RAPPIPAY_API}/payment-url`, paymentPayload);
+      console.log('[pse] payment-url response:', JSON.stringify(paymentResp).substring(0, 500));
+
+      // El token puede venir en distintos campos según la versión de la API
+      const firebaseToken = paymentResp.token || paymentResp.custom_token || paymentResp.firebase_token;
+      // O puede venir una URL directa del banco
+      const directUrl = paymentResp.bank_url || paymentResp.url || paymentResp.redirect_url || paymentResp.payment_url;
+
+      if (directUrl) {
+        // Si la API devuelve URL directa, usarla sin pasar por Firebase
+        console.log('[pse] URL directa del banco recibida ✓');
+        return sendJSON(res, 200, { ok: true, bank_url: directUrl, traceability_id });
+      }
+
+      if (!firebaseToken) {
+        return sendJSON(res, 500, { ok: false, error: 'No se recibió token de pago', debug: paymentResp });
       }
 
       const firebaseAuth = await httpsPost(
         `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${FIREBASE_API_KEY}`,
-        { token: paymentResp.token, returnSecureToken: true }
+        { token: firebaseToken, returnSecureToken: true }
       );
 
       if (!firebaseAuth.idToken) {
@@ -558,12 +573,14 @@ const server = http.createServer(async (req, res) => {
       const firebasePath = `cash_flow_cash_in_pse_link_transaction/${traceability_id}.json?auth=${firebaseAuth.idToken}`;
       let bankUrl = null;
 
-      for (let i = 0; i < 15; i++) {
-        await new Promise(r => setTimeout(r, 2000));
+      // Poll más rápido: 1s en vez de 2s, máximo 20 intentos
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 1000));
         try {
           const fbData = await httpsGet(`${FIREBASE_DB_URL}/${firebasePath}`);
-          const link = fbData?.data?.params?.link || fbData?.params?.link;
+          const link = fbData?.data?.params?.link || fbData?.params?.link || fbData?.link;
           if (link) { bankUrl = link; break; }
+          console.log(`[pse] Firebase poll ${i+1}/20...`);
         } catch {}
       }
 
