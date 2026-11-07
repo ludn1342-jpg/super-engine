@@ -1,16 +1,14 @@
 /**
- * Crezcamos - Consulta de Créditos
+ * Crezcamos - Consulta de Créditos + Pago PSE
  *
- * Estrategia: Browser PERSISTENTE
- *   - Mantiene Chromium abierto con la página de Crezcamos cargada
- *   - Simula un usuario real que tiene la pestaña abierta
- *   - Solo ejecuta grecaptcha.execute() cuando se necesita (rápido)
- *   - Refresca la página periódicamente para mantener sesión fresca
- *   - Reintentos automáticos con refresco si falla
+ * Estrategia: CapSolver para reCAPTCHA v3
+ *   - Usa servicio externo para resolver captcha con score alto
+ *   - Sin Playwright, sin browser, más rápido y confiable
+ *   - Reintentos automáticos
  *
- * ─── Instalación ────────────────────────────────────────────
- *   npm install playwright
- *   npx playwright install chromium
+ * ─── Variables de entorno ───────────────────────────────────
+ *   CAPSOLVER_API_KEY=tu-api-key  (requerido)
+ *   PORT=3000                      (opcional)
  *
  * ─── Uso ────────────────────────────────────────────────────
  *   node server.js
@@ -24,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
+const CAPSOLVER_API_KEY = process.env.CAPSOLVER_API_KEY || '';
 const API_BASE = 'https://analizamos.crezcamos.com:8440/pagos/api/public';
 const CREZCAMOS_URL = 'https://transacciones.crezcamos.com/';
 const RECAPTCHA_SITEKEY = '6LcN3IYfAAAAAHN_LIcvvuewvEcrUwoGGr7hVuf8';
@@ -37,7 +36,13 @@ const TIPO_DOC_IDS = {
   PPT: 'D82A1F3B-9E56-4C01-A2E7-8F3B6D0C5E91',
 };
 
-// ─── API POST helper ────────────────────────────────────────
+// ─── RappiPay PSE Config ────────────────────────────────────
+const RAPPIPAY_API = 'https://services.prod-k8s.rappipay.com/integration/pse/api';
+const RAPPIPAY_LINK_CODE = 's5sqzI';
+const FIREBASE_API_KEY = 'AIzaSyBXJ_5dpN6uTDr41m72dcS_ZKJtGc_dVHw';
+const FIREBASE_DB_URL = 'https://rpp-platform-mobile-app-prod-default-rtdb.firebaseio.com';
+
+// ─── API POST helper (Crezcamos) ────────────────────────────
 function apiPost(ruta, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(`${API_BASE}${ruta}`);
@@ -68,7 +73,7 @@ function apiPost(ruta, body, headers = {}) {
   });
 }
 
-// ─── HTTPS GET helper (para RappiPay/Firebase) ─────────────
+// ─── HTTPS GET helper ──────────────────────────────────────
 function httpsGet(urlStr) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
@@ -92,7 +97,7 @@ function httpsGet(urlStr) {
   });
 }
 
-// ─── HTTPS POST helper (para RappiPay/Firebase) ────────────
+// ─── HTTPS POST helper ────────────────────────────────────
 function httpsPost(urlStr, data) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
@@ -123,186 +128,66 @@ function httpsPost(urlStr, data) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BROWSER PERSISTENTE - Se mantiene abierto con la página cargada
+// CAPSOLVER - Resolver reCAPTCHA v3 con score alto
 // ═══════════════════════════════════════════════════════════════
 
-let browserInstance = null;
-let pageInstance = null;
-let browserReady = false;
-let lastPageLoad = 0;
-const PAGE_MAX_AGE = 90000; // Refrescar página cada 90 segundos
-
-// ─── Stealth init script ────────────────────────────────────
-const STEALTH_SCRIPT = () => {
-  // navigator.webdriver
-  delete Object.getPrototypeOf(navigator).webdriver;
-  Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
-
-  // chrome runtime
-  if (!window.chrome) window.chrome = {};
-  window.chrome.runtime = {
-    connect: () => {}, sendMessage: () => {},
-    onConnect: { addListener: () => {}, removeListener: () => {} },
-    onMessage: { addListener: () => {}, removeListener: () => {} },
-    id: undefined,
-  };
-  window.chrome.loadTimes = () => ({
-    commitLoadTime: Date.now() / 1000 - 2.5, connectionInfo: 'h2',
-    finishDocumentLoadTime: Date.now() / 1000 - 0.3,
-    finishLoadTime: Date.now() / 1000 - 0.1,
-    firstPaintAfterLoadTime: 0, firstPaintTime: Date.now() / 1000 - 1.8,
-    navigationType: 'Other', npnNegotiatedProtocol: 'h2',
-    requestTime: Date.now() / 1000 - 3, startLoadTime: Date.now() / 1000 - 2.8,
-    wasAlternateProtocolAvailable: false, wasFetchedViaSpdy: true, wasNpnNegotiated: true,
-  });
-  window.chrome.csi = () => ({
-    onloadT: Date.now() - 300, pageT: 3000 + Math.random() * 1000,
-    startE: Date.now() - 3500, tran: 15,
-  });
-  window.chrome.app = { isInstalled: false, InstallState: { INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } };
-
-  // Permissions
-  const origQuery = window.navigator.permissions?.query;
-  if (origQuery) {
-    window.navigator.permissions.query = (params) => {
-      if (params.name === 'notifications') return Promise.resolve({ state: 'denied', onchange: null });
-      return origQuery.call(window.navigator.permissions, params);
-    };
-  }
-
-  // Plugins
-  Object.defineProperty(navigator, 'plugins', {
-    get: () => {
-      const arr = [
-        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
-        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
-        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 1 },
-      ];
-      arr.length = 3; arr.item = (i) => arr[i] || null;
-      arr.namedItem = (n) => arr.find(p => p.name === n) || null;
-      arr.refresh = () => {};
-      return arr;
-    }
-  });
-
-  Object.defineProperty(navigator, 'languages', { get: () => ['es-CO', 'es', 'en-US', 'en'] });
-  Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-  Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-  Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-  Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
-  Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.' });
-
-  // WebGL
-  const getP = WebGLRenderingContext.prototype.getParameter;
-  WebGLRenderingContext.prototype.getParameter = function(p) {
-    if (p === 37445) return 'Intel Inc.';
-    if (p === 37446) return 'Intel Iris OpenGL Engine';
-    return getP.call(this, p);
-  };
-};
-
-// ─── Iniciar browser persistente ────────────────────────────
-async function iniciarBrowser() {
-  if (browserInstance) {
-    try { await browserInstance.close(); } catch {}
-  }
-
-  console.log('[browser] Iniciando browser persistente...');
-  const { chromium } = require('playwright');
-
-  browserInstance = await chromium.launch({
-    headless: true,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process,AutomationControlled',
-      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-      '--window-size=1366,768',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--no-first-run', '--no-default-browser-check',
-      '--lang=es-CO',
-    ],
-  });
-
-  const context = await browserInstance.newContext({
-    viewport: { width: 1366, height: 768 },
-    screen: { width: 1366, height: 768 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    locale: 'es-CO',
-    timezoneId: 'America/Bogota',
-    hasTouch: false,
-    isMobile: false,
-  });
-
-  pageInstance = await context.newPage();
-  await pageInstance.addInitScript(STEALTH_SCRIPT);
-
-  await cargarPagina();
-  console.log('[browser] Browser persistente listo ✓');
-}
-
-// ─── Cargar/recargar la página de Crezcamos ─────────────────
-async function cargarPagina() {
-  console.log('[browser] Cargando página Crezcamos...');
-  await pageInstance.goto(CREZCAMOS_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
-
-  // Esperar grecaptcha
-  await pageInstance.waitForFunction(() => {
-    return typeof grecaptcha !== 'undefined' && typeof grecaptcha.execute === 'function';
-  }, { timeout: 15000 });
-
-  // Simular actividad humana inicial
-  for (let i = 0; i < 3; i++) {
-    await pageInstance.mouse.move(
-      200 + Math.floor(Math.random() * 800),
-      150 + Math.floor(Math.random() * 400),
-      { steps: 8 + Math.floor(Math.random() * 10) }
-    );
-    await pageInstance.waitForTimeout(150 + Math.floor(Math.random() * 300));
-  }
-  await pageInstance.mouse.wheel(0, 80 + Math.floor(Math.random() * 120));
-  await pageInstance.waitForTimeout(200 + Math.floor(Math.random() * 300));
-  await pageInstance.mouse.click(500 + Math.floor(Math.random() * 200), 300 + Math.floor(Math.random() * 100), { delay: 30 });
-
-  lastPageLoad = Date.now();
-  browserReady = true;
-  console.log('[browser] Página lista, grecaptcha disponible ✓');
-}
-
-// ─── Obtener token rápido (página ya cargada) ───────────────
 async function obtenerToken() {
-  if (!browserReady || !pageInstance) {
-    await iniciarBrowser();
+  if (!CAPSOLVER_API_KEY) {
+    throw new Error('CAPSOLVER_API_KEY no configurado. Agrégalo en las variables de entorno de Render.');
   }
 
-  // Refrescar si la página es vieja
-  if (Date.now() - lastPageLoad > PAGE_MAX_AGE) {
-    console.log('[browser] Página expirada, recargando...');
-    await cargarPagina();
+  console.log('[captcha] Solicitando token a CapSolver...');
+
+  // 1. Crear tarea
+  const createResp = await httpsPost('https://api.capsolver.com/createTask', {
+    clientKey: CAPSOLVER_API_KEY,
+    task: {
+      type: 'ReCaptchaV3TaskProxyLess',
+      websiteURL: CREZCAMOS_URL,
+      websiteKey: RECAPTCHA_SITEKEY,
+      pageAction: 'sesion',
+      minScore: 0.7,
+    },
+  });
+
+  if (createResp.errorId && createResp.errorId !== 0) {
+    throw new Error(`CapSolver createTask error: ${createResp.errorDescription || createResp.errorCode || JSON.stringify(createResp)}`);
   }
 
-  // Pequeña interacción antes del captcha
-  await pageInstance.mouse.move(
-    300 + Math.floor(Math.random() * 600),
-    200 + Math.floor(Math.random() * 300),
-    { steps: 5 + Math.floor(Math.random() * 8) }
-  );
-  await pageInstance.waitForTimeout(300 + Math.floor(Math.random() * 500));
+  const taskId = createResp.taskId;
+  if (!taskId) {
+    throw new Error('CapSolver no devolvió taskId: ' + JSON.stringify(createResp));
+  }
 
-  // Ejecutar captcha
-  const token = await pageInstance.evaluate((siteKey) => {
-    return new Promise((resolve, reject) => {
-      grecaptcha.ready(() => {
-        grecaptcha.execute(siteKey, { action: 'sesion' })
-          .then(resolve)
-          .catch(reject);
-      });
+  console.log('[captcha] Task creada:', taskId);
+
+  // 2. Esperar resultado (poll)
+  const MAX_POLLS = 30;
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+
+    const result = await httpsPost('https://api.capsolver.com/getTaskResult', {
+      clientKey: CAPSOLVER_API_KEY,
+      taskId: taskId,
     });
-  }, RECAPTCHA_SITEKEY);
 
-  console.log('[captcha] Token obtenido ✓ (largo:', token.length, ')');
-  return token;
+    if (result.status === 'ready') {
+      const token = result.solution?.gRecaptchaResponse;
+      if (token) {
+        console.log('[captcha] Token obtenido ✓ (largo:', token.length, ')');
+        return token;
+      }
+      throw new Error('CapSolver ready pero sin token: ' + JSON.stringify(result));
+    }
+
+    if (result.errorId && result.errorId !== 0) {
+      throw new Error(`CapSolver error: ${result.errorDescription || result.errorCode}`);
+    }
+
+    // Sigue procesando...
+  }
+
+  throw new Error('CapSolver timeout: no se obtuvo token después de ' + MAX_POLLS + ' intentos');
 }
 
 // ─── AES-256-GCM cifrar/descifrar ───────────────────────────
@@ -376,13 +261,8 @@ async function crearSesion() {
       lastError = err;
       const esLowScore = err.message.includes('CAPTCHA_LOW_SCORE') || err.message.includes('CAPTCHA_INVALIDO');
       if (esLowScore && intento < MAX_REINTENTOS) {
-        console.log(`[sesion] ⚠ ${err.message.includes('LOW_SCORE') ? 'LOW_SCORE' : 'INVALIDO'} intento ${intento}/${MAX_REINTENTOS}, recargando página...`);
-        // Recargar página para obtener un token fresco
-        try { await cargarPagina(); } catch (e) {
-          console.log('[browser] Error recargando, reiniciando browser...');
-          await iniciarBrowser();
-        }
-        await new Promise(r => setTimeout(r, 1000 + Math.floor(Math.random() * 2000)));
+        console.log(`[sesion] ⚠ ${err.message.includes('LOW_SCORE') ? 'LOW_SCORE' : 'INVALIDO'} intento ${intento}/${MAX_REINTENTOS}, reintentando...`);
+        await new Promise(r => setTimeout(r, 1000));
         continue;
       }
       throw err;
@@ -490,6 +370,7 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  // ─── Servir index.html ───
   if (url.pathname === '/' && req.method === 'GET') {
     try {
       const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -498,6 +379,7 @@ const server = http.createServer(async (req, res) => {
     } catch { return sendJSON(res, 500, { error: 'index.html no encontrado' }); }
   }
 
+  // ─── Servir archivos estáticos (imágenes, etc) ───
   if (req.method === 'GET' && !url.pathname.startsWith('/consultar') && !url.pathname.startsWith('/pse/')) {
     const safePath = path.normalize(url.pathname).replace(/^(\.\.(\/|\\|$))+/, '');
     const filePath = path.join(__dirname, safePath);
@@ -509,6 +391,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ─── Consultar créditos ───
   if (url.pathname === '/consultar') {
     let tipo, doc;
     if (req.method === 'GET') {
@@ -539,11 +422,6 @@ const server = http.createServer(async (req, res) => {
   // ═══════════════════════════════════════════════════════════
   // RAPPIPAY PSE - Endpoints de pago
   // ═══════════════════════════════════════════════════════════
-
-  const RAPPIPAY_API = 'https://services.prod-k8s.rappipay.com/integration/pse/api';
-  const RAPPIPAY_LINK_CODE = 'fzyre9';
-  const FIREBASE_API_KEY = 'AIzaSyBXJ_5dpN6uTDr41m72dcS_ZKJtGc_dVHw';
-  const FIREBASE_DB_URL = 'https://rpp-platform-mobile-app-prod-default-rtdb.firebaseio.com';
 
   // ─── GET /pse/bancos ─────────────────────────────────────
   if (url.pathname === '/pse/bancos' && req.method === 'GET') {
@@ -644,7 +522,6 @@ const server = http.createServer(async (req, res) => {
             console.log('[pse] Bank URL obtenida:', bankUrl);
             break;
           }
-          // También verificar directamente en params
           if (fbData && fbData.params && fbData.params.link) {
             bankUrl = fbData.params.link;
             console.log('[pse] Bank URL obtenida (alt):', bankUrl);
@@ -680,39 +557,26 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ─── Arranque ───────────────────────────────────────────────
-async function main() {
-  // Iniciar browser persistente primero
-  await iniciarBrowser();
-
-  server.listen(PORT, () => {
-    console.log(`
+server.listen(PORT, () => {
+  console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║  Crezcamos - Consulta de Créditos                        ║
+║  Crezcamos - Consulta de Créditos + Pago PSE             ║
 ║  http://localhost:${PORT}                                    ║
 ║                                                           ║
-║  ★ Browser PERSISTENTE (más rápido y confiable)          ║
-║  ★ Reintentos automáticos con recarga de página          ║
-║  ★ Acepta cualquier tipo y número de documento           ║
+║  ★ CapSolver para reCAPTCHA (score alto siempre)         ║
+║  ★ Sin Playwright — más rápido y liviano                 ║
+║  ★ RappiPay PSE integrado                                ║
 ║                                                           ║
 ║  Frontend: http://localhost:${PORT}/                         ║
 ║  API:      GET /consultar?tipo=CC&doc=NUMERO              ║
+║  Bancos:   GET /pse/bancos                                ║
+║  Pagar:    POST /pse/pagar                                ║
 ╚═══════════════════════════════════════════════════════════╝
-    `);
-  });
-}
+  `);
 
-// Cerrar browser al salir
-process.on('SIGINT', async () => {
-  console.log('\n[exit] Cerrando browser...');
-  if (browserInstance) await browserInstance.close();
-  process.exit(0);
-});
-process.on('SIGTERM', async () => {
-  if (browserInstance) await browserInstance.close();
-  process.exit(0);
-});
-
-main().catch(err => {
-  console.error('[fatal]', err.message);
-  process.exit(1);
+  if (!CAPSOLVER_API_KEY) {
+    console.log('⚠️  CAPSOLVER_API_KEY no está configurado!');
+    console.log('   Agrega la variable de entorno en Render.');
+    console.log('   Regístrate en https://www.capsolver.com');
+  }
 });
